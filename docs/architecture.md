@@ -738,6 +738,60 @@ Three roles only. Admin users can be given a subset of admin permissions (preset
 
 **Admin permission presets** (applied to ADMIN users): *Super Admin* (everything, including permissions), *Operations* (live, pickups, collectors, retailers, zones, SOS, broadcasts), *Vault & Finance* (vault, banks, deposits, reconciliation, ledger, wallet adjustments, reports), *Viewer* (read-only views and reports).
 
+### 6.1 CRUD matrix by entity
+
+**Rules behind the matrix**
+
+1. **Master data** (people, shops, places, banks, notices, documents): full CRUD for Admins holding the listed permission. "Delete" means deactivate or block once any history refers to the record; a hard delete is allowed only for a record that was never used (a zone with no shops, a notice never sent).
+2. **Money records** (pickups, collections, passbook, udhar, recharge/BBPS, penalties, vault, bank deposits, ledger) are created only through their workflow. Amounts are never edited and rows are never deleted. Every correction is a new reversal or adjustment entry with a reason, password re-entry, and maker-checker above the threshold (§21 A42).
+3. **Audit logs** are read-only for Admins with `audit.view`; nobody, including super admins, can edit or delete them.
+4. Collectors and retailers act only on their own records, through app workflow actions; the server re-checks ownership on every call.
+5. Every create, update, deactivation, reversal and export is written to the audit log.
+
+Legend: **C** create · **R** read · **U** update · **D** delete/deactivate · — no access. "Own" means the collector's own records or the retailer's own shop. Admin cells name the permission required; super admins hold all of them.
+
+**Master data**
+
+| Entity | Admin (permission) | Collector | Retailer owner | Retailer staff | "Delete" means |
+|---|---|---|---|---|---|
+| Admin users | C R U D — `users.manage` | — | — | — | Block; never hard-deleted |
+| Admin permissions | C R U D — super admin only (`permissions.manage`) | — | — | — | Permission removed |
+| Collectors (profile, vehicle, float limit, zones, status) | C R U D — `collectors.manage` | R own profile, float and zones | — | — | Suspend / deactivate |
+| Collector phones | R; U = approve; D = revoke — `devices.manage` | C = register own phone; R own | — | — | Revoke; its sessions end at once |
+| Retailers / shops (details, default collector, penalty override ₹50–₹200, KYC status) | C R U D — `retailers.manage`; bulk C via import — `imports.manage` | R the assigned shop's name, address, contact and pin, only during an active job | R own shop | R own shop's name and address | Block / deactivate |
+| Shop GPS pin | U with a reason — `retailers.manage` (old pins kept in history) | — | — (asks the Admin) | — | Never deleted; history kept |
+| Shop logins (owner, staff) | C R U D — `retailers.manage` | — | C R U D the staff logins of own shop | R own login | Deactivate |
+| Territories and zones | C R U D — `zones.manage` | R own zones | — | — | Deactivate (hard delete only if unused) |
+| Bank accounts | C R U D — `banks.manage` | — | — | — | Deactivate (deposits keep referring to it) |
+| Notices / broadcasts | C R U D — `broadcasts.manage` | — | R active notices; U = acknowledge | R; U = acknowledge | Cancel (read receipts kept) |
+| Documents (GST, KYC, IDs, deposit slips) | C R U D — `documents.manage`; R and download — `documents.view` | — | — | — | Soft delete; every download audited |
+| Settings | R U — `settings.manage` (fixed catalogue: no C or D) | R app subset via `/meta` | R app subset | R app subset | — |
+| Bulk imports | C R; U = commit or cancel — `imports.manage` | — | — | — | Cancel before commit |
+
+**Operations and money**
+
+| Entity | Admin (permission) | Collector | Retailer owner | Retailer staff | Never deleted — instead |
+|---|---|---|---|---|---|
+| Pickup requests | R all; C = raise on a shop's behalf (phone-in request, same one-open-request rule); U = assign, reassign, rebroadcast, cancel — `pickups.manage`; confirm on behalf, resolve dispute — `pickups.override` | R offers and own jobs; U = accept, pass, start trip, unlock, release, unable-to-collect | C; R own; U = cancel (penalty rules), confirm, dispute | C; R own; U = cancel, confirm, dispute (`can_request`, `can_confirm`) | Cancelled, expired and failed pickups stay as history |
+| Cash collections and denominations | R; U only through dispute resolution or override (reason + audit) | C own, at the shop, geofence-checked; R own | R own; U = confirm or dispute | R own; U = confirm or dispute | Void = reversal entry |
+| Receipts | R; reprint; resend | R own; print | R, download and share own | R and download own | Void (the receipt is kept) |
+| Wallet balance and passbook | R — `ledger.view` | — | R own | — | — |
+| Udhar disbursal, manual credit or debit | C — `wallet.adjust` (reason, password re-entry, maker-checker above threshold); R | — | R own outstanding | — | Reversal entry |
+| Udhar payment [PAY] | R | — | C from own wallet (`can_spend`) | — | — |
+| Recharge / BBPS | R — `ledger.view` | — | C and R own (`can_spend`) | — | Refund only when the provider confirms failure |
+| Penalties | R; U = waive or refund — `penalties.manage` | R own share | R own | R own | Waiver = reversal |
+| Collector payouts (penalty share) | C R — `vault.operate` | R own | — | — | — |
+| Duty sessions | R; U = force punch-out with a reason — `collectors.manage` | C = punch in; U = punch out; R own | — | — | — |
+| GPS points | R — `live.view` | C own (automatic); R own | R the assigned collector's live position during an active pickup | Same as owner | Auto-pruned after 90 days (setting) |
+| SOS alerts | R; U = acknowledge, resolve — `sos.manage` | C own; U = "false alarm" request; R nearby alerts | — | — | — |
+| Vault handovers | R; U = verify count — `vault.operate`; sign off — `vault.signoff` | C = declare own; U = acknowledge the verified count; R own | — | — | Cancel only before verification |
+| Vault batches and cash book | R; U = close batch — `vault.operate` | — | — | — | — |
+| Bank deposits | C = allocate; U = record deposit, verify — `deposits.manage` | — | — | — | Cancel an allocation before the deposit |
+| Reconciliation and day close | C = run; R; U = resolve discrepancy, close day — `reconciliation.manage` | — | — | — | Written off with a reason, never removed |
+| Notifications (in-app inbox) | C = send — `broadcasts.manage`; R delivery log | R own; U = mark read | R own; U = mark read | R own; U = mark read | — |
+| Audit logs | R and export — `audit.view` | — | — | — | Append-only for everyone |
+| Reports and exports | R — `reports.view`; export — `reports.export` | R own summary | R own statements | — | Export files expire |
+
 ---
 
 ## 7. Admin panel sitemap
