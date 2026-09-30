@@ -5,3 +5,5 @@ parameters:
     paths:
         - app/
     level: 5
+    # Read enum and other casts declared in each model's casts() method.
+    parseModelCastsMethod: true
