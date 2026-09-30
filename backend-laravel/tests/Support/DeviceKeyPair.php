@@ -14,9 +14,9 @@ final class DeviceKeyPair
         public readonly string $publicKeyPem,
     ) {}
 
-    public static function generate(): self
+    public static function generate(string $curve = 'prime256v1'): self
     {
-        $options = ['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1'];
+        $options = ['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => $curve];
         $config = self::opensslConfig();
         if ($config !== null) {
             $options['config'] = $config;

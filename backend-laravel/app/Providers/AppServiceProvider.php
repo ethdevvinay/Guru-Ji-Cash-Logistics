@@ -7,6 +7,8 @@ namespace App\Providers;
 use App\Enums\UserRole;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
+use App\Services\Auth\Integrity\IntegrityVerifier;
+use App\Services\Auth\Integrity\UncheckedIntegrityVerifier;
 use App\Support\MobileNumber;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
@@ -23,7 +25,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->bind(IntegrityVerifier::class, UncheckedIntegrityVerifier::class);
     }
 
     public function boot(): void
@@ -45,5 +47,7 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by((MobileNumber::normalize($mobile) ?? Str::lower($mobile)).'|'.$request->ip());
         });
+
+        RateLimiter::for('device-register', static fn (Request $request): Limit => Limit::perHour(10)->by((string) $request->user()?->getAuthIdentifier()));
     }
 }
