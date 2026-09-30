@@ -11,6 +11,7 @@ use App\Http\Middleware\EnsureRetailerMembership;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\ForceJsonResponse;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\VerifyDeviceSignature;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -34,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'ability' => CheckForAnyAbility::class,
             'password.changed' => EnsurePasswordChanged::class,
             'retailer.member' => EnsureRetailerMembership::class,
+            'device.signed' => VerifyDeviceSignature::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

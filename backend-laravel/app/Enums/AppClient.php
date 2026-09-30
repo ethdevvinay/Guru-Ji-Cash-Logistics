@@ -8,4 +8,5 @@ namespace App\Enums;
 enum AppClient: string
 {
     case Retailer = 'retailer';
+    case Collector = 'collector';
 }

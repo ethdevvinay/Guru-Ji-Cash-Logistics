@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace App\Services\Auth;
 
 use App\Enums\AppClient;
+use App\Enums\CollectorStatus;
+use App\Enums\DeviceStatus;
 use App\Enums\UserRole;
 use App\Exceptions\ApiException;
+use App\Models\Collector;
+use App\Models\Device;
 use App\Models\User;
 use App\Services\Audit\AuditActor;
 use App\Services\Audit\AuditLogger;
+use App\Support\Api\ApiResponse;
 use App\Support\MobileNumber;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -34,6 +39,7 @@ final class LoginService
         private readonly AuditLogger $audit,
         private readonly TokenIssuer $tokens,
         private readonly RetailerMembershipGuard $memberships,
+        private readonly DeviceSignatureVerifier $signatures,
     ) {}
 
     public function login(string $mobile, string $password, AppClient $app, Request $request): IssuedToken
@@ -65,6 +71,7 @@ final class LoginService
 
         $issued = match ($app) {
             AppClient::Retailer => $this->retailerLogin($user, $app),
+            AppClient::Collector => $this->collectorLogin($user, $app, $request),
         };
 
         $user->forceFill(['last_login_at' => now(), 'last_login_ip' => $request->ip()])->save();
@@ -86,6 +93,44 @@ final class LoginService
         }
 
         return $this->tokens->issueRetailerToken($user);
+    }
+
+    /**
+     * A collector gets a session only on a phone whose Keystore key signed this login.
+     * Without one, the collector receives a registration token instead (spec §18.3).
+     */
+    private function collectorLogin(User $user, AppClient $app, Request $request): IssuedToken
+    {
+        if ($user->role !== UserRole::Collector) {
+            $this->reject($user, $app, 'wrong_app', new ApiException('FORBIDDEN', 'This account cannot use the collector app.', 403));
+        }
+
+        $collector = Collector::query()->where('user_id', $user->id)->first();
+
+        if ($collector === null || $collector->status !== CollectorStatus::Active) {
+            $this->reject($user, $app, 'collector_suspended', new ApiException('COLLECTOR_SUSPENDED', 'Your collector account is suspended. Contact the operations team.', 403));
+        }
+
+        $devicePublicId = (string) $request->header('X-Device-Id', '');
+        $device = $devicePublicId === '' ? null : Device::query()
+            ->where('public_id', $devicePublicId)
+            ->where('user_id', $user->id)
+            ->where('status', DeviceStatus::Active->value)
+            ->first();
+
+        if ($device === null) {
+            $registration = $this->tokens->issueRegistrationToken($user);
+            $this->audit->record('AUTH.DEVICE_REGISTRATION_REQUIRED', $user, null, null, ['app' => $app->value], AuditActor::user($user));
+
+            throw new ApiException('DEVICE_REGISTRATION_REQUIRED', 'Register this phone to continue.', 403, [], [
+                'registration_token' => $registration->plainText,
+                'expires_at' => ApiResponse::formatTime($registration->expiresAt),
+            ]);
+        }
+
+        $this->signatures->verify($request, $device);
+
+        return $this->tokens->issueCollectorToken($user, $device);
     }
 
     private function recordFailure(User $user, AppClient $app): void
