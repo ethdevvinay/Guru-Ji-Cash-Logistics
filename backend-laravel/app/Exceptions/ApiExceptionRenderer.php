@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\Sanctum;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
@@ -52,6 +53,17 @@ final class ApiExceptionRenderer
 
     private function unauthenticated(Request $request): JsonResponse
     {
+        $bearer = $request->bearerToken();
+
+        if ($bearer !== null) {
+            $model = Sanctum::personalAccessTokenModel();
+            $token = $model::findToken($bearer);
+
+            if ($token !== null && $token->expires_at !== null && $token->expires_at->isPast()) {
+                return ApiResponse::error('TOKEN_EXPIRED', 'Your session has expired. Please log in again.', 401);
+            }
+        }
+
         return ApiResponse::error('UNAUTHENTICATED', 'Please log in.', 401);
     }
 
