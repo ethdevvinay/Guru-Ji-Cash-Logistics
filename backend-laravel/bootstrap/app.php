@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Exceptions\ApiException;
+use App\Exceptions\ApiExceptionRenderer;
+use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\ForceJsonResponse;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,10 +20,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->prepend(AssignRequestId::class);
+        $middleware->append(SecurityHeaders::class);
+        $middleware->api(prepend: [ForceJsonResponse::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+        $exceptions->dontReport(ApiException::class);
+        $exceptions->render(new ApiExceptionRenderer);
     })->create();
