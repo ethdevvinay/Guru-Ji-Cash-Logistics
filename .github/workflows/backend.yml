@@ -1,0 +1,50 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend-laravel/**', '.github/workflows/backend.yml']
+  pull_request:
+    paths: ['backend-laravel/**', '.github/workflows/backend.yml']
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend-laravel
+    env:
+      DB_CONNECTION: mariadb
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: cms_test
+      DB_USERNAME: cms_test
+      DB_PASSWORD: cms_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MariaDB 10.11 from release binaries (no containers)
+        uses: shogo82148/actions-setup-mysql@v1
+        with:
+          distribution: mariadb
+          mysql-version: '10.11'
+          root-password: root
+
+      - name: Create the test database
+        run: >
+          mysql --host=127.0.0.1 --user=root --password=root -e
+          "CREATE DATABASE cms_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+           CREATE USER 'cms_test'@'%' IDENTIFIED BY 'cms_test';
+           GRANT ALL PRIVILEGES ON cms_test.* TO 'cms_test'@'%';"
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: bcmath, intl, mbstring, pdo_mysql, sodium, zip, gd, openssl
+          coverage: none
+
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.example .env && php artisan key:generate
+      - run: composer lint
+      - run: composer analyse
+      - run: php artisan test
